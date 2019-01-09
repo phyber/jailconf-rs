@@ -224,6 +224,18 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_param_with_value_utf8() {
+        let item = "allow.mount = \"😁\";".as_bytes();
+        let res = parse_param_with_value(item);
+        let ok = Ok((
+                "".as_bytes(),
+                ("allow.mount".as_bytes(), "😁".as_bytes())
+                ));
+
+        assert_eq!(res, ok);
+    }
+
+    #[test]
     fn test_parse_param_with_value_trailing_newline() {
         let item = "allow.mount = true;\n".as_bytes();
         let res = parse_param_with_value(item);
