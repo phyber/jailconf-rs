@@ -5,19 +5,32 @@ use std::str;
 use nom::*;
 use nom::Context::{
     Code,
+    List,
 };
 use nom::Err::*;
 
 #[derive(Debug, PartialEq)]
-struct JailConfParam {
-    name:  String,
-    value: String,
+struct JailParamBool<'a> {
+    name:  &'a [u8],
 }
 
 #[derive(Debug, PartialEq)]
-struct JailConf {
-    name:   String,
-    params: Vec<JailConfParam>,
+struct JailParamValue<'a> {
+    name:  &'a [u8],
+    value: &'a [u8],
+}
+
+#[derive(Debug, PartialEq)]
+struct JailBlock<'a> {
+    name:   &'a [u8],
+    params: Vec<JailConf<'a>>,
+}
+
+#[derive(Debug, PartialEq)]
+enum JailConf<'a> {
+    Block(JailBlock<'a>),
+    ParamBool(JailParamBool<'a>),
+    ParamValue(JailParamValue<'a>),
 }
 
 // Parse a valueless boolean in the style of:
@@ -65,54 +78,31 @@ named!(
     )
 );
 
-// Parse the jail name
-named!(
-    parse_name<&[u8], &[u8]>,
-    take_until_either!(" {")
-);
-
-// Parse a param name
-named!(
-    parse_param_name<&[u8], &[u8]>,
-    take_until_either!(" +=")
-);
-
-// Parse a param value
-named!(
-    parse_param_value<&[u8], &[u8]>,
-    take_until!(";")
-);
 
 named!(
-    parse_param<&[u8], (&[u8], &[u8])>,
-    ws!(
-        do_parse!(
-            pname: take_until_either!(" +=") >>
-            opt_res!(char!('+')) >>
-            opt_res!(char!('=')) >>
-            pval: take_until!(";") >>
-            char!(';') >>
-            (pname, pval)
-        )
-    )
-);
+    parse_input<&[u8], Vec<JailConf>>,
+    do_parse!(
+        // We attempt parsers many times until the input is exhausted.
+        config: many0!(
+            // Config could be in pretty much any order.
+            alt!(
+                // Parse a boolean parameter with no values.
+                parse_bool_param_no_value => { |param|
+                    JailConf::ParamBool(JailParamBool{
+                        name: param,
+                    })
+                } |
+                // Parse a parameter with a value.
+                parse_param_with_value => { |(param, value)|
+                    JailConf::ParamValue(JailParamValue{
+                        name:  param,
+                        value: value,
+                    })
+                }
+            )
+        ) >>
 
-named!(
-    parse_params<&[u8], Vec<(&[u8], &[u8])>>,
-    many0!(parse_param)
-);
-
-named!(
-    parser<&[u8], (&[u8], Vec<(&[u8], &[u8])>)>,
-    ws!(
-        do_parse!(
-            name: parse_name >>
-            char!('{') >>
-            params: parse_params >>
-            char!('}') >>
-            eof!() >>
-            (name, params)
-        )
+        (config)
     )
 );
 
@@ -131,7 +121,7 @@ fn main() {
     let mut buffer = vec![]; //String::new();
     input.read_to_end(&mut buffer).unwrap();
 
-    let result = parser(&buffer[..]);
+    let result = parse_input(&buffer[..]);
     let result = match result {
         Ok(r)  => r,
         Err(e) => {
@@ -139,6 +129,9 @@ fn main() {
                 Error(Code(i, k)) => {
                     eprintln!("I: {}", str::from_utf8(i).unwrap());
                     eprintln!("K: {:?}", k);
+                },
+                Error(List(l)) => {
+                    eprintln!("{:?}", l);
                 },
                 Failure(f) => {
                     eprintln!("{:?}", f);
@@ -151,15 +144,8 @@ fn main() {
         },
     };
     let (a, b) = result;
-    let stra = str::from_utf8(a);
-
-    let (c, d) = b;
-    //let strb = b; //str::from_utf8(b);
-    let strc = str::from_utf8(c);
-
-    println!("A: {:?}", stra);
-    println!("B: {:?}", strc);
-    println!("{:?}", d);
+    println!("{:?}", a);
+    println!("{:?}", b);
 }
 
 #[cfg(test)]
@@ -224,6 +210,18 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_param_with_quoted_value_with_space() {
+        let item = "exec.stop = \"/bin/sh /etc/rc.shutdown\";".as_bytes();
+        let res = parse_param_with_value(item);
+        let ok = Ok((
+                "".as_bytes(),
+                ("exec.stop".as_bytes(), "/bin/sh /etc/rc.shutdown".as_bytes())
+                ));
+
+        assert_eq!(res, ok);
+    }
+
+    #[test]
     fn test_parse_param_with_value_utf8() {
         let item = "allow.mount = \"😁\";".as_bytes();
         let res = parse_param_with_value(item);
@@ -279,6 +277,42 @@ mod tests {
                 "".as_bytes(),
                 ("allow.mount".as_bytes(), "true".as_bytes())
                 ));
+
+        assert_eq!(res, ok);
+    }
+
+    // Integration testing, testing the main input parser.
+    #[test]
+    fn test_parse_input() {
+        let input = r#"allow.mount;
+persist;
+allow.raw_sockets = "1";
+exec.stop = "/bin/sh /etc/rc.shutdown";
+"#.as_bytes();
+
+        let res = parse_input(input);
+
+        let jc = vec![
+            JailConf::ParamBool(JailParamBool{
+                name: "allow.mount".as_bytes()
+            }),
+            JailConf::ParamBool(JailParamBool{
+                name: "persist".as_bytes()
+            }),
+            JailConf::ParamValue(JailParamValue{
+                name: "allow.raw_sockets".as_bytes(),
+                value: "1".as_bytes(),
+            }),
+            JailConf::ParamValue(JailParamValue{
+                name: "exec.stop".as_bytes(),
+                value: "/bin/sh /etc/rc.shutdown".as_bytes(),
+            }),
+        ];
+
+        let ok = Ok((
+            "".as_bytes(),
+            jc
+            ));
 
         assert_eq!(res, ok);
     }

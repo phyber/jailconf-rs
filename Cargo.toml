@@ -5,4 +5,7 @@ authors = ["David O'Rourke <david.orourke@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-nom = "4.1.1"
+
+[dependencies.nom]
+version = "4.1.1"
+features = ["std", "verbose-errors"]
