@@ -8,21 +8,22 @@ use nom::Context::{
     List,
 };
 use nom::Err::*;
+use nom::types::CompleteStr;
 
 #[derive(Debug, PartialEq)]
 struct JailParamBool<'a> {
-    name:  &'a [u8],
+    name: CompleteStr<'a>,
 }
 
 #[derive(Debug, PartialEq)]
 struct JailParamValue<'a> {
-    name:  &'a [u8],
-    value: &'a [u8],
+    name:  CompleteStr<'a>,
+    value: CompleteStr<'a>,
 }
 
 #[derive(Debug, PartialEq)]
 struct JailBlock<'a> {
-    name:   &'a [u8],
+    name:   CompleteStr<'a>,
     params: Vec<JailConf<'a>>,
 }
 
@@ -40,7 +41,7 @@ enum JailConf<'a> {
 //
 // Other types of value will error.
 named!(
-    parse_bool_param_no_value<&[u8], &[u8]>,
+    parse_bool_param_no_value<CompleteStr, CompleteStr>,
     do_parse!(
         res: take_until_either!(" +=;\n") >> // Consume until an interesting char
              not!(is_a!(" +=\n"))         >> // Ensure it's not a banned char
@@ -59,7 +60,7 @@ named!(
 // This will choke if a value contained a quoted double quote, we should be
 // able to use escaped!() to help with this.
 named!(
-    parse_param_with_value<&[u8], (&[u8], &[u8])>,
+    parse_param_with_value<CompleteStr, (CompleteStr, CompleteStr)>,
     do_parse!(
         param: take_until_either!(" +=;\n") >>
                not!(is_a!(";\n"))           >> // We don't want end of line yet
@@ -80,12 +81,12 @@ named!(
 
 
 named!(
-    parse_input<&[u8], Vec<JailConf>>,
+    parse_input<CompleteStr, Vec<JailConf>>,
     do_parse!(
         // We attempt parsers many times until the input is exhausted.
         config: many0!(
             // Config could be in pretty much any order.
-            alt!(
+            ws!(alt!(
                 // Parse a boolean parameter with no values.
                 parse_bool_param_no_value => { |param|
                     JailConf::ParamBool(JailParamBool{
@@ -99,7 +100,7 @@ named!(
                         value: value,
                     })
                 }
-            )
+            ))
         ) >>
 
         (config)
@@ -118,16 +119,16 @@ fn main() {
         Box::new(stdin)
     };
 
-    let mut buffer = vec![]; //String::new();
-    input.read_to_end(&mut buffer).unwrap();
+    let mut buffer = String::new();
+    input.read_to_string(&mut buffer).unwrap();
 
-    let result = parse_input(&buffer[..]);
+    let result = parse_input(CompleteStr(&buffer));
     let result = match result {
         Ok(r)  => r,
         Err(e) => {
             match e {
                 Error(Code(i, k)) => {
-                    eprintln!("I: {}", str::from_utf8(i).unwrap());
+                    eprintln!("I: {}", i);
                     eprintln!("K: {:?}", k);
                 },
                 Error(List(l)) => {
@@ -155,25 +156,25 @@ mod tests {
     // Valueless boolean params
     #[test]
     fn test_parse_bool_param_no_value() {
-        let item = "allow.mount;".as_bytes();
+        let item = CompleteStr("allow.mount;");
         let res = parse_bool_param_no_value(item);
-        let ok = Ok(("".as_bytes(), "allow.mount".as_bytes()));
+        let ok = Ok((CompleteStr(""), CompleteStr("allow.mount")));
 
         assert_eq!(res, ok);
     }
 
     #[test]
     fn test_parse_bool_param_no_value_trailing_newline() {
-        let item = "allow.mount;\n".as_bytes();
+        let item = CompleteStr("allow.mount;\n");
         let res = parse_bool_param_no_value(item);
-        let ok = Ok(("\n".as_bytes(), "allow.mount".as_bytes()));
+        let ok = Ok((CompleteStr("\n"), CompleteStr("allow.mount")));
 
         assert_eq!(res, ok);
     }
 
     #[test]
     fn test_parse_bool_param_no_value_with_value_error() {
-        let item = "allow.mount = true;".as_bytes();
+        let item = CompleteStr("allow.mount = true;");
         let res = parse_bool_param_no_value(item);
 
         assert!(res.is_err());
@@ -181,16 +182,16 @@ mod tests {
 
     #[test]
     fn test_parse_bool_param_multiline_a() {
-        let item = "allow.mount;\npersist;".as_bytes();
+        let item = CompleteStr("allow.mount;\npersist;");
         let res = parse_bool_param_no_value(item);
-        let ok = Ok(("\npersist;".as_bytes(), "allow.mount".as_bytes()));
+        let ok = Ok((CompleteStr("\npersist;"), CompleteStr("allow.mount")));
 
         assert_eq!(res, ok);
     }
 
     #[test]
     fn test_parse_bool_param_multiline_error() {
-        let item = "allow.mount\n;".as_bytes();
+        let item = CompleteStr("allow.mount\n;");
         let res = parse_bool_param_no_value(item);
 
         assert!(res.is_err());
@@ -199,11 +200,11 @@ mod tests {
     // Parameters with values
     #[test]
     fn test_parse_param_with_value() {
-        let item = "allow.mount = true;".as_bytes();
+        let item = CompleteStr("allow.mount = true;");
         let res = parse_param_with_value(item);
         let ok = Ok((
-                "".as_bytes(),
-                ("allow.mount".as_bytes(), "true".as_bytes())
+                CompleteStr(""),
+                (CompleteStr("allow.mount"), CompleteStr("true"))
                 ));
 
         assert_eq!(res, ok);
@@ -211,23 +212,11 @@ mod tests {
 
     #[test]
     fn test_parse_param_with_quoted_value_with_space() {
-        let item = "exec.stop = \"/bin/sh /etc/rc.shutdown\";".as_bytes();
+        let item = CompleteStr("exec.stop = \"/bin/sh /etc/rc.shutdown\";");
         let res = parse_param_with_value(item);
         let ok = Ok((
-                "".as_bytes(),
-                ("exec.stop".as_bytes(), "/bin/sh /etc/rc.shutdown".as_bytes())
-                ));
-
-        assert_eq!(res, ok);
-    }
-
-    #[test]
-    fn test_parse_param_with_value_utf8() {
-        let item = "allow.mount = \"😁\";".as_bytes();
-        let res = parse_param_with_value(item);
-        let ok = Ok((
-                "".as_bytes(),
-                ("allow.mount".as_bytes(), "😁".as_bytes())
+                CompleteStr(""),
+                (CompleteStr("exec.stop"), CompleteStr("/bin/sh /etc/rc.shutdown"))
                 ));
 
         assert_eq!(res, ok);
@@ -235,11 +224,11 @@ mod tests {
 
     #[test]
     fn test_parse_param_with_value_trailing_newline() {
-        let item = "allow.mount = true;\n".as_bytes();
+        let item = CompleteStr("allow.mount = true;\n");
         let res = parse_param_with_value(item);
         let ok = Ok((
-                "\n".as_bytes(),
-                ("allow.mount".as_bytes(), "true".as_bytes())
+                CompleteStr("\n"),
+                (CompleteStr("allow.mount"), CompleteStr("true"))
                 ));
 
         assert_eq!(res, ok);
@@ -247,11 +236,11 @@ mod tests {
 
     #[test]
     fn test_parse_param_with_quoted_value() {
-        let item = "allow.mount = \"true\";".as_bytes();
+        let item = CompleteStr("allow.mount = \"true\";");
         let res = parse_param_with_value(item);
         let ok = Ok((
-                "".as_bytes(),
-                ("allow.mount".as_bytes(), "true".as_bytes())
+                CompleteStr(""),
+                (CompleteStr("allow.mount"), CompleteStr("true"))
                 ));
 
         assert_eq!(res, ok);
@@ -259,11 +248,11 @@ mod tests {
 
     #[test]
     fn test_parse_param_with_quoted_value_trailing_newline() {
-        let item = "allow.mount = \"true\";\n".as_bytes();
+        let item = CompleteStr("allow.mount = \"true\";\n");
         let res = parse_param_with_value(item);
         let ok = Ok((
-                "\n".as_bytes(),
-                ("allow.mount".as_bytes(), "true".as_bytes())
+                CompleteStr("\n"),
+                (CompleteStr("allow.mount"), CompleteStr("true"))
                 ));
 
         assert_eq!(res, ok);
@@ -271,11 +260,11 @@ mod tests {
 
     #[test]
     fn test_parse_param_with_quoted_value_no_spaces() {
-        let item = "allow.mount=\"true\";".as_bytes();
+        let item = CompleteStr("allow.mount=\"true\";");
         let res = parse_param_with_value(item);
         let ok = Ok((
-                "".as_bytes(),
-                ("allow.mount".as_bytes(), "true".as_bytes())
+                CompleteStr(""),
+                (CompleteStr("allow.mount"), CompleteStr("true"))
                 ));
 
         assert_eq!(res, ok);
@@ -284,35 +273,33 @@ mod tests {
     // Integration testing, testing the main input parser.
     #[test]
     fn test_parse_input() {
-        let input = r#"allow.mount;
-persist;
-allow.raw_sockets = "1";
-exec.stop = "/bin/sh /etc/rc.shutdown";
-"#.as_bytes();
+        let input = CompleteStr(r#"
+            allow.mount;
+            persist;
+            allow.raw_sockets = "1";
+            exec.stop = "/bin/sh /etc/rc.shutdown";
+            "#);
 
-        let res = parse_input(input);
+        let res = parse_input(input.into());
 
         let jc = vec![
             JailConf::ParamBool(JailParamBool{
-                name: "allow.mount".as_bytes()
+                name: CompleteStr("allow.mount"),
             }),
             JailConf::ParamBool(JailParamBool{
-                name: "persist".as_bytes()
+                name: CompleteStr("persist"),
             }),
             JailConf::ParamValue(JailParamValue{
-                name: "allow.raw_sockets".as_bytes(),
-                value: "1".as_bytes(),
+                name:  CompleteStr("allow.raw_sockets"),
+                value: CompleteStr("1"),
             }),
             JailConf::ParamValue(JailParamValue{
-                name: "exec.stop".as_bytes(),
-                value: "/bin/sh /etc/rc.shutdown".as_bytes(),
+                name:  CompleteStr("exec.stop"),
+                value: CompleteStr("/bin/sh /etc/rc.shutdown"),
             }),
         ];
 
-        let ok = Ok((
-            "".as_bytes(),
-            jc
-            ));
+        let ok = Ok((CompleteStr(""), jc));
 
         assert_eq!(res, ok);
     }
