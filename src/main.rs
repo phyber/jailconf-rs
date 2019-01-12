@@ -83,11 +83,12 @@ named!(
 named!(
     parse_block<CompleteStr, JailConf>,
     do_parse!(
-        name:  ws!(take_until_either!(" {")) >> // Read the name
-               char!('{')                    >> // Mandatory opening {
-        block: ws!(parse_input)              >> // Recursive parsing. Oh no.
-        ws!(char!('}'))                      >> // Mandatory terminating }
-        (JailConf::Block(                       // JailBlock to return
+        name:  take_until_either!(" {") >> // Read the name
+               space0                   >> // Optional spaces
+               char!('{')               >> // Mandatory opening {
+        block: parse_input              >> // Recursive parsing. Oh no.
+               char!('}')               >> // Mandatory terminating }
+        (JailConf::Block(                  // JailBlock to return
             JailBlock{
                 name:   name,
                 params: block,
@@ -449,7 +450,7 @@ mod tests {
             ],
         });
 
-        let ok = Ok((CompleteStr(""), jc));
+        let ok = Ok((CompleteStr("\n"), jc));
 
         assert_eq!(res, ok);
     }
