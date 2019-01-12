@@ -9,3 +9,7 @@ edition = "2018"
 [dependencies.nom]
 version = "4.1.1"
 features = ["std", "verbose-errors"]
+
+# Used by cargo test
+[dev-dependencies]
+indoc = "0.3"

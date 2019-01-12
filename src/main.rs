@@ -169,6 +169,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use indoc::indoc;
 
     // Valueless boolean params
     #[test]
@@ -335,31 +336,32 @@ mod tests {
 
     #[test]
     fn test_parse_block() {
-        let input = r#"
+        let input = indoc!(
+        r#"
             nginx {
-                    host.hostname = "nginx";
-                    path = "/usr/jails/nginx";
-                    ip4.addr += "lo1|127.0.1.1/32";
-                    ip6.addr += "lo1|fd00:0:0:1::1/64";
-                    ip4.addr += "em0|192.168.5.1/32";
-                    exec.start += "sleep  2 ";
-                    allow.raw_sockets = 0;
-                    exec.clean;
-                    exec.system_user = "root";
-                    exec.jail_user = "root";
-                    exec.start += "/bin/sh /etc/rc";
-                    exec.stop = "";
-                    exec.consolelog = "/var/log/jail_nginx_console.log";
-                    mount.fstab = "/etc/fstab.nginx";
-                    mount.devfs;
-                    mount.fdescfs;
-                    mount.procfs;
-                    allow.mount;
-                    allow.set_hostname = 0;
-                    allow.sysvipc = 0;
-                    enforce_statfs = "2";
+                host.hostname = "nginx";
+                path = "/usr/jails/nginx";
+                ip4.addr += "lo1|127.0.1.1/32";
+                ip6.addr += "lo1|fd00:0:0:1::1/64";
+                ip4.addr += "em0|192.168.5.1/32";
+                exec.start += "sleep  2 ";
+                allow.raw_sockets = 0;
+                exec.clean;
+                exec.system_user = "root";
+                exec.jail_user = "root";
+                exec.start += "/bin/sh /etc/rc";
+                exec.stop = "";
+                exec.consolelog = "/var/log/jail_nginx_console.log";
+                mount.fstab = "/etc/fstab.nginx";
+                mount.devfs;
+                mount.fdescfs;
+                mount.procfs;
+                allow.mount;
+                allow.set_hostname = 0;
+                allow.sysvipc = 0;
+                enforce_statfs = "2";
             }
-            "#;
+            "#);
 
         let res = parse_block(input.into());
         let jc = JailConf::Block(JailBlock{
