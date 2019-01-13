@@ -125,7 +125,10 @@ named!(
                         name:  param,
                         value: value,
                     })
-                }
+                } |
+                // Parse a named jail block
+                // Returns a JailConf::Block
+                parse_block
             ))
         ) >>
         (config)
@@ -310,7 +313,7 @@ mod tests {
 
     // Integration testing, testing the main input parser.
     #[test]
-    fn test_parse_input() {
+    fn test_parse_input_no_blocks() {
         let input = CompleteStr(r#"
             allow.mount;
             persist;
@@ -339,6 +342,30 @@ mod tests {
 
         let ok = Ok((CompleteStr(""), jc));
 
+        assert_eq!(res, ok);
+    }
+
+    #[test]
+    fn test_parse_input_block() {
+        let input = indoc!(
+        r#"
+            nginx {
+                host.hostname = "nginx";
+            }
+            "#);
+
+        let res = parse_block(input.into());
+        let jc = JailConf::Block(JailBlock{
+            name: CompleteStr("nginx"),
+            params: vec![
+                JailConf::ParamValue(JailParamValue{
+                    name:  "host.hostname".into(),
+                    value: "nginx".into(),
+                }),
+            ],
+        });
+
+        let ok = Ok((CompleteStr("\n"), jc));
         assert_eq!(res, ok);
     }
 
