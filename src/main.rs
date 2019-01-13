@@ -370,6 +370,51 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_input_full_conf() {
+        let input = indoc!(
+        r#"
+            allow.mount;
+            persist;
+            allow.raw_sockets = "1";
+            exec.stop = "/bin/sh /etc/rc.shutdown";
+
+            nginx {
+                host.hostname = "nginx";
+            }
+            "#);
+
+        let res = parse_input(input.into());
+        let jc = vec![
+            JailConf::ParamBool(JailParamBool{
+                name: CompleteStr("allow.mount"),
+            }),
+            JailConf::ParamBool(JailParamBool{
+                name: CompleteStr("persist"),
+            }),
+            JailConf::ParamValue(JailParamValue{
+                name:  CompleteStr("allow.raw_sockets"),
+                value: CompleteStr("1"),
+            }),
+            JailConf::ParamValue(JailParamValue{
+                name:  CompleteStr("exec.stop"),
+                value: CompleteStr("/bin/sh /etc/rc.shutdown"),
+            }),
+            JailConf::Block(JailBlock{
+                name:  "nginx".into(),
+                params: vec![
+                    JailConf::ParamValue(JailParamValue{
+                        name:  "host.hostname".into(),
+                        value: "nginx".into(),
+                    }),
+                ],
+            }),
+        ];
+
+        let ok = Ok((CompleteStr(""), jc));
+        assert_eq!(res, ok);
+    }
+
+    #[test]
     fn test_parse_block() {
         let input = indoc!(
         r#"
