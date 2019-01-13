@@ -259,7 +259,7 @@ mod tests {
     // Valueless boolean params
     #[test]
     fn test_parse_bool_param_no_value() {
-        let item = CompleteStr("allow.mount;");
+        let item = "allow.mount;".into();
         let res = parse_bool_param_no_value(item);
         let ok = Ok((CompleteStr(""), CompleteStr("allow.mount")));
 
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_parse_bool_param_no_value_trailing_newline() {
-        let item = CompleteStr("allow.mount;\n");
+        let item = "allow.mount;\n".into();
         let res = parse_bool_param_no_value(item);
         let ok = Ok((CompleteStr("\n"), CompleteStr("allow.mount")));
 
@@ -277,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_parse_bool_param_no_value_with_value_error() {
-        let item = CompleteStr("allow.mount = true;");
+        let item = "allow.mount = true;".into();
         let res = parse_bool_param_no_value(item);
 
         assert!(res.is_err());
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_parse_bool_param_multiline_a() {
-        let item = CompleteStr("allow.mount;\npersist;");
+        let item = "allow.mount;\npersist;".into();
         let res = parse_bool_param_no_value(item);
         let ok = Ok((CompleteStr("\npersist;"), CompleteStr("allow.mount")));
 
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn test_parse_bool_param_multiline_error() {
-        let item = CompleteStr("allow.mount\n;");
+        let item = "allow.mount\n;".into();
         let res = parse_bool_param_no_value(item);
 
         assert!(res.is_err());
@@ -303,35 +303,35 @@ mod tests {
     // Parameters with values
     #[test]
     fn test_parse_param_with_value() {
-        let item = CompleteStr("allow.mount = true;");
+        let item = "allow.mount = true;".into();
         let res = parse_param_with_value(item);
         let jc = JailParamValue{
             name:   "allow.mount".into(),
             value:  "true".into(),
             append: false,
         };
-        let ok = Ok((CompleteStr(""), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
 
     #[test]
     fn test_parse_param_with_quoted_value_with_space() {
-        let item = CompleteStr("exec.stop = \"/bin/sh /etc/rc.shutdown\";");
+        let item = "exec.stop = \"/bin/sh /etc/rc.shutdown\";".into();
         let res = parse_param_with_value(item);
         let jc = JailParamValue{
             name:  "exec.stop".into(),
             value: "/bin/sh /etc/rc.shutdown".into(),
             append: false,
         };
-        let ok = Ok((CompleteStr(""), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
 
     #[test]
     fn test_parse_param_with_value_trailing_newline() {
-        let item = CompleteStr("allow.mount = true;\n");
+        let item = "allow.mount = true;\n".into();
         let res = parse_param_with_value(item);
         let jc = JailParamValue{
             name:  "allow.mount".into(),
@@ -345,56 +345,56 @@ mod tests {
 
     #[test]
     fn test_parse_param_with_quoted_value() {
-        let item = CompleteStr("allow.mount = \"true\";");
+        let item = "allow.mount = \"true\";".into();
         let res = parse_param_with_value(item);
         let jc = JailParamValue{
             name:   "allow.mount".into(),
             value:  "true".into(),
             append: false,
         };
-        let ok = Ok((CompleteStr(""), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
 
     #[test]
     fn test_parse_param_with_quoted_emoji_value() {
-        let item = CompleteStr("smile.emoji = \"😊\";");
+        let item = "smile.emoji = \"😊\";".into();
         let res = parse_param_with_value(item);
         let jc = JailParamValue{
             name:   "smile.emoji".into(),
             value:  "😊".into(),
             append: false,
         };
-        let ok = Ok((CompleteStr(""), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
 
     #[test]
     fn test_parse_param_with_quoted_value_trailing_newline() {
-        let item = CompleteStr("allow.mount = \"true\";\n");
+        let item = "allow.mount = \"true\";\n".into();
         let res = parse_param_with_value(item);
         let jc = JailParamValue{
             name:   "allow.mount".into(),
             value:  "true".into(),
             append: false,
         };
-        let ok = Ok((CompleteStr("\n"), jc));
+        let ok = Ok(("\n".into(), jc));
 
         assert_eq!(res, ok);
     }
 
     #[test]
     fn test_parse_param_with_quoted_value_no_spaces() {
-        let item = CompleteStr("allow.mount=\"true\";");
+        let item = "allow.mount=\"true\";".into();
         let res = parse_param_with_value(item);
         let jc = JailParamValue{
             name:   "allow.mount".into(),
             value:  "true".into(),
             append: false,
         };
-        let ok = Ok((CompleteStr(""), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -402,7 +402,7 @@ mod tests {
     // Integration testing, testing the main input parser.
     #[test]
     fn test_parse_input_no_blocks() {
-        let input = CompleteStr(r#"
+        let input = indoc!(r#"
             allow.mount;
             persist;
             allow.raw_sockets = "1";
@@ -413,24 +413,24 @@ mod tests {
 
         let jc = vec![
             JailConf::ParamBool(JailParamBool{
-                name: CompleteStr("allow.mount"),
+                name: "allow.mount".into(),
             }),
             JailConf::ParamBool(JailParamBool{
-                name: CompleteStr("persist"),
+                name: "persist".into(),
             }),
             JailConf::ParamValue(JailParamValue{
-                name:   CompleteStr("allow.raw_sockets"),
-                value:  CompleteStr("1"),
+                name:   "allow.raw_sockets".into(),
+                value:  "1".into(),
                 append: false,
             }),
             JailConf::ParamValue(JailParamValue{
-                name:   CompleteStr("exec.stop"),
-                value:  CompleteStr("/bin/sh /etc/rc.shutdown"),
+                name:   "exec.stop".into(),
+                value:  "/bin/sh /etc/rc.shutdown".into(),
                 append: false,
             }),
         ];
 
-        let ok = Ok((CompleteStr(""), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -491,14 +491,14 @@ mod tests {
                 style:   CommentStyle::C,
             }),
             JailConf::ParamBool(JailParamBool{
-                name: CompleteStr("allow.mount"),
+                name: "allow.mount".into(),
             }),
             JailConf::Comment(JailComment{
                 comment: " Allow mounting".into(),
                 style:   CommentStyle::CPP,
             }),
             JailConf::ParamBool(JailParamBool{
-                name: CompleteStr("persist"),
+                name: "persist".into(),
             }),
             JailConf::Comment(JailComment{
                 comment: " Persist jail ".into(),
@@ -514,8 +514,8 @@ mod tests {
                 style:   CommentStyle::Shell,
             }),
             JailConf::ParamValue(JailParamValue{
-                name:  CompleteStr("exec.stop"),
-                value: CompleteStr("/bin/sh /etc/rc.shutdown"),
+                name:   "exec.stop".into(),
+                value:  "/bin/sh /etc/rc.shutdown".into(),
                 append: false,
             }),
             JailConf::Comment(JailComment{
@@ -550,7 +550,7 @@ mod tests {
             }),
         ];
 
-        let ok = Ok((CompleteStr(""), jc));
+        let ok = Ok(("".into(), jc));
         assert_eq!(res, ok);
     }
 
@@ -585,7 +585,7 @@ mod tests {
 
         let res = parse_block(input.into());
         let jc = JailConf::Block(JailBlock{
-            name: CompleteStr("nginx"),
+            name:   "nginx".into(),
             params: vec![
                 JailConf::ParamValue(JailParamValue{
                     name:   "host.hostname".into(),
@@ -685,7 +685,7 @@ mod tests {
             ],
         });
 
-        let ok = Ok((CompleteStr("\n"), jc));
+        let ok = Ok(("\n".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -722,10 +722,10 @@ mod tests {
         let res = parse_comment_c_style(input.into());
         let jc = JailComment{
             comment: "\n * Test comment\n ".into(),
-            style: CommentStyle::C,
+            style:   CommentStyle::C,
         };
 
-        let ok = Ok((CompleteStr("\n"), jc));
+        let ok = Ok(("\n".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -742,7 +742,7 @@ mod tests {
             style:   CommentStyle::CPP,
         };
 
-        let ok = Ok((CompleteStr("\n"), jc));
+        let ok = Ok(("\n".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -759,7 +759,7 @@ mod tests {
             style:   CommentStyle::Shell,
         };
 
-        let ok = Ok((CompleteStr("\n"), jc));
+        let ok = Ok(("\n".into(), jc));
 
         assert_eq!(res, ok);
     }
