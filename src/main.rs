@@ -102,12 +102,14 @@ named!(
 //
 // Other types of value will error.
 named!(
-    parse_bool_param_no_value<CompleteStr, CompleteStr>,
+    parse_bool_param_no_value<CompleteStr, JailParamBool>,
     do_parse!(
-        res: take_until_either!(" +=;\n") >> // Consume until an interesting char
-             not!(is_a!(" +=\n"))         >> // Ensure it's not a banned char
-             char!(';')                   >> // Consume terminating ;
-        (res)
+        name: take_until_either!(" +=;\n") >> // Consume until an interesting char
+              not!(is_a!(" +=\n"))         >> // Ensure it's not a banned char
+              char!(';')                   >> // Consume terminating ;
+        (JailParamBool{
+            name: name,
+        })
     )
 );
 
@@ -192,9 +194,7 @@ named!(
                 } |
                 // Parse a boolean parameter with no values.
                 parse_bool_param_no_value => { |param|
-                    JailConf::ParamBool(JailParamBool{
-                        name: param,
-                    })
+                    JailConf::ParamBool(param)
                 } |
                 // Parse a parameter with a value.
                 parse_param_with_value => { |param|
@@ -261,7 +261,10 @@ mod tests {
     fn test_parse_bool_param_no_value() {
         let item = "allow.mount;".into();
         let res = parse_bool_param_no_value(item);
-        let ok = Ok((CompleteStr(""), CompleteStr("allow.mount")));
+        let jc = JailParamBool{
+            name: "allow.mount".into(),
+        };
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -270,7 +273,10 @@ mod tests {
     fn test_parse_bool_param_no_value_trailing_newline() {
         let item = "allow.mount;\n".into();
         let res = parse_bool_param_no_value(item);
-        let ok = Ok((CompleteStr("\n"), CompleteStr("allow.mount")));
+        let jc = JailParamBool{
+            name: "allow.mount".into(),
+        };
+        let ok = Ok(("\n".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -287,7 +293,10 @@ mod tests {
     fn test_parse_bool_param_multiline_a() {
         let item = "allow.mount;\npersist;".into();
         let res = parse_bool_param_no_value(item);
-        let ok = Ok((CompleteStr("\npersist;"), CompleteStr("allow.mount")));
+        let jc = JailParamBool{
+            name: "allow.mount".into(),
+        };
+        let ok = Ok(("\npersist;".into(), jc));
 
         assert_eq!(res, ok);
     }
