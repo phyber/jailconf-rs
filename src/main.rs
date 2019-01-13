@@ -449,9 +449,9 @@ mod tests {
             /*
              * Opening C style comment
              */
-            allow.mount;
-            persist;
-            allow.raw_sockets = "1";
+            allow.mount;                            // Allow mounting
+            persist;                                /* Persist jail */
+            allow.raw_sockets = "1";                # Allow raw sockets
             exec.stop = "/bin/sh /etc/rc.shutdown";
 
             // CPP style comment
@@ -470,12 +470,24 @@ mod tests {
             JailConf::ParamBool(JailParamBool{
                 name: CompleteStr("allow.mount"),
             }),
+            JailConf::Comment(JailComment{
+                comment: " Allow mounting".into(),
+                style:   CommentStyle::CPP,
+            }),
             JailConf::ParamBool(JailParamBool{
                 name: CompleteStr("persist"),
+            }),
+            JailConf::Comment(JailComment{
+                comment: " Persist jail ".into(),
+                style:   CommentStyle::C,
             }),
             JailConf::ParamValue(JailParamValue{
                 name:  CompleteStr("allow.raw_sockets"),
                 value: CompleteStr("1"),
+            }),
+            JailConf::Comment(JailComment{
+                comment: " Allow raw sockets".into(),
+                style:   CommentStyle::Shell,
             }),
             JailConf::ParamValue(JailParamValue{
                 name:  CompleteStr("exec.stop"),
