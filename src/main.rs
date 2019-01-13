@@ -29,8 +29,9 @@ struct JailParamBool<'a> {
 
 #[derive(Debug, PartialEq)]
 struct JailParamValue<'a> {
-    name:  CompleteStr<'a>,
-    value: CompleteStr<'a>,
+    name:   CompleteStr<'a>,
+    value:  CompleteStr<'a>,
+    append: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -119,14 +120,13 @@ named!(
 // Other types of value will error.
 // This will choke if a value contained a quoted double quote, we should be
 // able to use escaped!() to help with this.
-// The + is actually important here and we need to capture it.
 named!(
-    parse_param_with_value<CompleteStr, (CompleteStr, CompleteStr)>,
+    parse_param_with_value<CompleteStr, JailParamValue>,
     do_parse!(
-        param: take_until_either!(" +=;\n") >>
+        name:  take_until_either!(" +=;\n") >>
                not!(is_a!(";\n"))           >> // We don't want end of line yet
                space0                       >> // Optional spaces
-               opt_res!(char!('+'))         >> // Optional +
+        plus:  opt!(char!('+'))             >> // Optional +
                char!('=')                   >> // = is mandatory
                space0                       >> // Optional spaces
         value: delimited!(
@@ -136,7 +136,11 @@ named!(
                )                            >>
                not!(is_a!("\n"))            >> // Ensure no new line yet
                char!(';')                   >> // Terminating ;
-        (param, value)
+        (JailParamValue{
+            name:   name,
+            value:  value,
+            append: plus.is_some(),
+        })
     )
 );
 
@@ -193,11 +197,8 @@ named!(
                     })
                 } |
                 // Parse a parameter with a value.
-                parse_param_with_value => { |(param, value)|
-                    JailConf::ParamValue(JailParamValue{
-                        name:  param,
-                        value: value,
-                    })
+                parse_param_with_value => { |param|
+                    JailConf::ParamValue(param)
                 } |
                 // Parse a named jail block
                 // Returns a JailConf::Block
@@ -304,10 +305,12 @@ mod tests {
     fn test_parse_param_with_value() {
         let item = CompleteStr("allow.mount = true;");
         let res = parse_param_with_value(item);
-        let ok = Ok((
-                CompleteStr(""),
-                (CompleteStr("allow.mount"), CompleteStr("true"))
-                ));
+        let jc = JailParamValue{
+            name:   "allow.mount".into(),
+            value:  "true".into(),
+            append: false,
+        };
+        let ok = Ok((CompleteStr(""), jc));
 
         assert_eq!(res, ok);
     }
@@ -316,10 +319,12 @@ mod tests {
     fn test_parse_param_with_quoted_value_with_space() {
         let item = CompleteStr("exec.stop = \"/bin/sh /etc/rc.shutdown\";");
         let res = parse_param_with_value(item);
-        let ok = Ok((
-                CompleteStr(""),
-                (CompleteStr("exec.stop"), CompleteStr("/bin/sh /etc/rc.shutdown"))
-                ));
+        let jc = JailParamValue{
+            name:  "exec.stop".into(),
+            value: "/bin/sh /etc/rc.shutdown".into(),
+            append: false,
+        };
+        let ok = Ok((CompleteStr(""), jc));
 
         assert_eq!(res, ok);
     }
@@ -328,10 +333,12 @@ mod tests {
     fn test_parse_param_with_value_trailing_newline() {
         let item = CompleteStr("allow.mount = true;\n");
         let res = parse_param_with_value(item);
-        let ok = Ok((
-                CompleteStr("\n"),
-                (CompleteStr("allow.mount"), CompleteStr("true"))
-                ));
+        let jc = JailParamValue{
+            name:  "allow.mount".into(),
+            value: "true".into(),
+            append: false,
+        };
+        let ok = Ok((CompleteStr("\n"), jc));
 
         assert_eq!(res, ok);
     }
@@ -340,10 +347,12 @@ mod tests {
     fn test_parse_param_with_quoted_value() {
         let item = CompleteStr("allow.mount = \"true\";");
         let res = parse_param_with_value(item);
-        let ok = Ok((
-                CompleteStr(""),
-                (CompleteStr("allow.mount"), CompleteStr("true"))
-                ));
+        let jc = JailParamValue{
+            name:   "allow.mount".into(),
+            value:  "true".into(),
+            append: false,
+        };
+        let ok = Ok((CompleteStr(""), jc));
 
         assert_eq!(res, ok);
     }
@@ -352,10 +361,12 @@ mod tests {
     fn test_parse_param_with_quoted_emoji_value() {
         let item = CompleteStr("smile.emoji = \"😊\";");
         let res = parse_param_with_value(item);
-        let ok = Ok((
-                CompleteStr(""),
-                (CompleteStr("smile.emoji"), CompleteStr("😊"))
-                ));
+        let jc = JailParamValue{
+            name:   "smile.emoji".into(),
+            value:  "😊".into(),
+            append: false,
+        };
+        let ok = Ok((CompleteStr(""), jc));
 
         assert_eq!(res, ok);
     }
@@ -364,10 +375,12 @@ mod tests {
     fn test_parse_param_with_quoted_value_trailing_newline() {
         let item = CompleteStr("allow.mount = \"true\";\n");
         let res = parse_param_with_value(item);
-        let ok = Ok((
-                CompleteStr("\n"),
-                (CompleteStr("allow.mount"), CompleteStr("true"))
-                ));
+        let jc = JailParamValue{
+            name:   "allow.mount".into(),
+            value:  "true".into(),
+            append: false,
+        };
+        let ok = Ok((CompleteStr("\n"), jc));
 
         assert_eq!(res, ok);
     }
@@ -376,10 +389,12 @@ mod tests {
     fn test_parse_param_with_quoted_value_no_spaces() {
         let item = CompleteStr("allow.mount=\"true\";");
         let res = parse_param_with_value(item);
-        let ok = Ok((
-                CompleteStr(""),
-                (CompleteStr("allow.mount"), CompleteStr("true"))
-                ));
+        let jc = JailParamValue{
+            name:   "allow.mount".into(),
+            value:  "true".into(),
+            append: false,
+        };
+        let ok = Ok((CompleteStr(""), jc));
 
         assert_eq!(res, ok);
     }
@@ -404,12 +419,14 @@ mod tests {
                 name: CompleteStr("persist"),
             }),
             JailConf::ParamValue(JailParamValue{
-                name:  CompleteStr("allow.raw_sockets"),
-                value: CompleteStr("1"),
+                name:   CompleteStr("allow.raw_sockets"),
+                value:  CompleteStr("1"),
+                append: false,
             }),
             JailConf::ParamValue(JailParamValue{
-                name:  CompleteStr("exec.stop"),
-                value: CompleteStr("/bin/sh /etc/rc.shutdown"),
+                name:   CompleteStr("exec.stop"),
+                value:  CompleteStr("/bin/sh /etc/rc.shutdown"),
+                append: false,
             }),
         ];
 
@@ -429,11 +446,12 @@ mod tests {
 
         let res = parse_block(input.into());
         let jc = JailConf::Block(JailBlock{
-            name: CompleteStr("nginx"),
+            name: "nginx".into(),
             params: vec![
                 JailConf::ParamValue(JailParamValue{
-                    name:  "host.hostname".into(),
-                    value: "nginx".into(),
+                    name:   "host.hostname".into(),
+                    value:  "nginx".into(),
+                    append: false,
                 }),
             ],
         });
@@ -487,8 +505,9 @@ mod tests {
                 style:   CommentStyle::C,
             }),
             JailConf::ParamValue(JailParamValue{
-                name:  CompleteStr("allow.raw_sockets"),
-                value: CompleteStr("1"),
+                name:   "allow.raw_sockets".into(),
+                value:  "1".into(),
+                append: false,
             }),
             JailConf::Comment(JailComment{
                 comment: " Allow raw sockets".into(),
@@ -497,6 +516,7 @@ mod tests {
             JailConf::ParamValue(JailParamValue{
                 name:  CompleteStr("exec.stop"),
                 value: CompleteStr("/bin/sh /etc/rc.shutdown"),
+                append: false,
             }),
             JailConf::Comment(JailComment{
                 comment: " CPP style comment".into(),
@@ -510,8 +530,9 @@ mod tests {
                         style:   CommentStyle::Shell,
                     }),
                     JailConf::ParamValue(JailParamValue{
-                        name:  "host.hostname".into(),
-                        value: "nginx".into(),
+                        name:   "host.hostname".into(),
+                        value:  "nginx".into(),
+                        append: false,
                     }),
                 ],
             }),
@@ -540,7 +561,7 @@ mod tests {
             nginx {
                 host.hostname = "nginx";
                 path = "/usr/jails/nginx";
-                ip4.addr += "lo1|127.0.1.1/32";
+                ip4.addr = "lo1|127.0.1.1/32";
                 ip6.addr += "lo1|fd00:0:0:1::1/64";
                 ip4.addr += "em0|192.168.5.1/32";
                 exec.start += "sleep  2 ";
@@ -567,59 +588,72 @@ mod tests {
             name: CompleteStr("nginx"),
             params: vec![
                 JailConf::ParamValue(JailParamValue{
-                    name:  "host.hostname".into(),
-                    value: "nginx".into(),
+                    name:   "host.hostname".into(),
+                    value:  "nginx".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "path".into(),
-                    value: "/usr/jails/nginx".into(),
+                    name:   "path".into(),
+                    value:  "/usr/jails/nginx".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "ip4.addr".into(),
-                    value: "lo1|127.0.1.1/32".into(),
+                    name:   "ip4.addr".into(),
+                    value:  "lo1|127.0.1.1/32".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "ip6.addr".into(),
-                    value: "lo1|fd00:0:0:1::1/64".into(),
+                    name:   "ip6.addr".into(),
+                    value:  "lo1|fd00:0:0:1::1/64".into(),
+                    append: true,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "ip4.addr".into(),
-                    value: "em0|192.168.5.1/32".into(),
+                    name:   "ip4.addr".into(),
+                    value:  "em0|192.168.5.1/32".into(),
+                    append: true,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "exec.start".into(),
-                    value: "sleep  2 ".into(),
+                    name:   "exec.start".into(),
+                    value:  "sleep  2 ".into(),
+                    append: true,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "allow.raw_sockets".into(),
-                    value: "0".into(),
+                    name:   "allow.raw_sockets".into(),
+                    value:  "0".into(),
+                    append: false,
                 }),
                 JailConf::ParamBool(JailParamBool{
                     name: "exec.clean".into(),
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "exec.system_user".into(),
-                    value: "root".into(),
+                    name:   "exec.system_user".into(),
+                    value:  "root".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "exec.jail_user".into(),
-                    value: "root".into(),
+                    name:   "exec.jail_user".into(),
+                    value:  "root".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "exec.start".into(),
-                    value: "/bin/sh /etc/rc".into(),
+                    name:   "exec.start".into(),
+                    value:  "/bin/sh /etc/rc".into(),
+                    append: true,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "exec.stop".into(),
-                    value: "".into(),
+                    name:   "exec.stop".into(),
+                    value:  "".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "exec.consolelog".into(),
-                    value: "/var/log/jail_nginx_console.log".into(),
+                    name:   "exec.consolelog".into(),
+                    value:  "/var/log/jail_nginx_console.log".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "mount.fstab".into(),
-                    value: "/etc/fstab.nginx".into(),
+                    name:   "mount.fstab".into(),
+                    value:  "/etc/fstab.nginx".into(),
+                    append: false,
                 }),
                 JailConf::ParamBool(JailParamBool{
                     name: "mount.devfs".into(),
@@ -634,16 +668,19 @@ mod tests {
                     name: "allow.mount".into(),
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "allow.set_hostname".into(),
-                    value: "0".into(),
+                    name:   "allow.set_hostname".into(),
+                    value:  "0".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "allow.sysvipc".into(),
-                    value: "0".into(),
+                    name:   "allow.sysvipc".into(),
+                    value:  "0".into(),
+                    append: false,
                 }),
                 JailConf::ParamValue(JailParamValue{
-                    name:  "enforce_statfs".into(),
-                    value: "2".into(),
+                    name:   "enforce_statfs".into(),
+                    value:  "2".into(),
+                    append: false,
                 }),
             ],
         });
