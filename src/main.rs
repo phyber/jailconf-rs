@@ -49,7 +49,7 @@ enum JailConf<'a> {
 
 // Parse a C style comment, eg:
 // /*
-//  * things
+//  * C style comment
 //  */
 named!(
     parse_comment_c_style<CompleteStr, JailComment>,
@@ -61,7 +61,21 @@ named!(
         ) >>
         (JailComment{
             comment: res,
-            style: CommentStyle::C,
+            style:   CommentStyle::C,
+        })
+    )
+);
+
+// Parse a CPP style comment, eg:
+// // C++ style comment
+named!(
+    parse_comment_cpp_style<CompleteStr, JailComment>,
+    do_parse!(
+             tag!("//")        >>
+        res: take_until!("\n") >>
+        (JailComment{
+            comment: res,
+            style:   CommentStyle::CPP,
         })
     )
 );
@@ -148,6 +162,10 @@ named!(
             ws!(alt!(
                 // Parse C style comments
                 parse_comment_c_style => { |comment|
+                    JailConf::Comment(comment)
+                } |
+                // Parse CPP style comments
+                parse_comment_cpp_style => { |comment|
                     JailConf::Comment(comment)
                 } |
                 // Parse a boolean parameter with no values.
@@ -418,6 +436,7 @@ mod tests {
             allow.raw_sockets = "1";
             exec.stop = "/bin/sh /etc/rc.shutdown";
 
+            // CPP style comment
             nginx {
                 host.hostname = "nginx";
             }
@@ -442,6 +461,10 @@ mod tests {
             JailConf::ParamValue(JailParamValue{
                 name:  CompleteStr("exec.stop"),
                 value: CompleteStr("/bin/sh /etc/rc.shutdown"),
+            }),
+            JailConf::Comment(JailComment{
+                comment: " CPP style comment".into(),
+                style:   CommentStyle::CPP,
             }),
             JailConf::Block(JailBlock{
                 name:  "nginx".into(),
@@ -611,6 +634,23 @@ mod tests {
         let jc = JailComment{
             comment: "\n * Test comment\n ".into(),
             style: CommentStyle::C,
+        };
+
+        let ok = Ok((CompleteStr("\n"), jc));
+
+        assert_eq!(res, ok);
+    }
+
+    #[test]
+    fn test_parse_coment_cpp_style() {
+        let input = indoc!(r#"
+            // CPP style comment
+            "#);
+
+        let res = parse_comment_cpp_style(input.into());
+        let jc = JailComment{
+            comment: " CPP style comment".into(),
+            style:   CommentStyle::CPP,
         };
 
         let ok = Ok((CompleteStr("\n"), jc));
