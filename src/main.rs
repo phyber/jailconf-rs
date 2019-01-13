@@ -80,6 +80,20 @@ named!(
     )
 );
 
+// Parse a shell style comment, eg:
+// # Shell style comment
+named!(
+    parse_comment_shell_style<CompleteStr, JailComment>,
+    do_parse!(
+             tag!("#")         >>
+        res: take_until!("\n") >>
+        (JailComment{
+            comment: res,
+            style:   CommentStyle::Shell,
+        })
+    )
+);
+
 // Parse a valueless boolean in the style of:
 //   - allow.mount;
 //   - persist;
@@ -166,6 +180,10 @@ named!(
                 } |
                 // Parse CPP style comments
                 parse_comment_cpp_style => { |comment|
+                    JailConf::Comment(comment)
+                } |
+                // Parse Shell style comments
+                parse_comment_shell_style => { |comment|
                     JailConf::Comment(comment)
                 } |
                 // Parse a boolean parameter with no values.
@@ -438,6 +456,7 @@ mod tests {
 
             // CPP style comment
             nginx {
+                # Shell style comment
                 host.hostname = "nginx";
             }
             "#);
@@ -469,6 +488,10 @@ mod tests {
             JailConf::Block(JailBlock{
                 name:  "nginx".into(),
                 params: vec![
+                    JailConf::Comment(JailComment{
+                        comment: " Shell style comment".into(),
+                        style:   CommentStyle::Shell,
+                    }),
                     JailConf::ParamValue(JailParamValue{
                         name:  "host.hostname".into(),
                         value: "nginx".into(),
@@ -651,6 +674,23 @@ mod tests {
         let jc = JailComment{
             comment: " CPP style comment".into(),
             style:   CommentStyle::CPP,
+        };
+
+        let ok = Ok((CompleteStr("\n"), jc));
+
+        assert_eq!(res, ok);
+    }
+
+    #[test]
+    fn test_parse_coment_shell_style() {
+        let input = indoc!(r#"
+            # Shell style comment
+            "#);
+
+        let res = parse_comment_shell_style(input.into());
+        let jc = JailComment{
+            comment: " Shell style comment".into(),
+            style:   CommentStyle::Shell,
         };
 
         let ok = Ok((CompleteStr("\n"), jc));
