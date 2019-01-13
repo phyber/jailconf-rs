@@ -10,6 +10,19 @@ use nom::Err::*;
 use nom::types::CompleteStr;
 
 #[derive(Debug, PartialEq)]
+enum CommentStyle {
+    C,
+    CPP,
+    Shell,
+}
+
+#[derive(Debug, PartialEq)]
+struct JailComment<'a> {
+    comment: CompleteStr<'a>,
+    style: CommentStyle,
+}
+
+#[derive(Debug, PartialEq)]
 struct JailParamBool<'a> {
     name: CompleteStr<'a>,
 }
@@ -29,9 +42,29 @@ struct JailBlock<'a> {
 #[derive(Debug, PartialEq)]
 enum JailConf<'a> {
     Block(JailBlock<'a>),
+    Comment(JailComment<'a>),
     ParamBool(JailParamBool<'a>),
     ParamValue(JailParamValue<'a>),
 }
+
+// Parse a C style comment, eg:
+// /*
+//  * things
+//  */
+named!(
+    parse_comment_c_style<CompleteStr, JailComment>,
+    do_parse!(
+        res: delimited!(
+            tag!("/*"),
+            take_until!("*/"),
+            tag!("*/")
+        ) >>
+        (JailComment{
+            comment: res,
+            style: CommentStyle::C,
+        })
+    )
+);
 
 // Parse a valueless boolean in the style of:
 //   - allow.mount;
@@ -553,5 +586,24 @@ mod tests {
 
         let res = parse_block(input.into());
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_parse_comment_c_style() {
+        let input = indoc!(r#"
+            /*
+             * Test comment
+             */
+            "#);
+
+        let res = parse_comment_c_style(input.into());
+        let jc = JailComment{
+            comment: "\n * Test comment\n ".into(),
+            style: CommentStyle::C,
+        };
+
+        let ok = Ok((CompleteStr("\n"), jc));
+
+        assert_eq!(res, ok);
     }
 }
