@@ -459,6 +459,11 @@ mod tests {
                 # Shell style comment
                 host.hostname = "nginx";
             }
+
+            # Multiple jails could be configured
+            jail2 {
+                persist;
+            }
             "#);
 
         let res = parse_input(input.into());
@@ -507,6 +512,18 @@ mod tests {
                     JailConf::ParamValue(JailParamValue{
                         name:  "host.hostname".into(),
                         value: "nginx".into(),
+                    }),
+                ],
+            }),
+            JailConf::Comment(JailComment{
+                comment: " Multiple jails could be configured".into(),
+                style:   CommentStyle::Shell,
+            }),
+            JailConf::Block(JailBlock{
+                name:  "jail2".into(),
+                params: vec![
+                    JailConf::ParamBool(JailParamBool{
+                        name: "persist".into(),
                     }),
                 ],
             }),
