@@ -80,15 +80,22 @@ named!(
 );
 
 // Attempt to parse a jail block.
+// eg.
+// jailname {
+//     ip4.addr = "127.0.1.1";
+//     allow.mount;
+//     persist;
+// }
 named!(
     parse_block<CompleteStr, JailConf>,
     do_parse!(
-        name:  take_until_either!(" {") >> // Read the name
-               space0                   >> // Optional spaces
-               char!('{')               >> // Mandatory opening {
-        block: parse_input              >> // Recursive parsing. Oh no.
-               char!('}')               >> // Mandatory terminating }
-        (JailConf::Block(                  // JailBlock to return
+        name:  take_until_either!(" {;\n") >> // Read the name
+               space0                      >> // Optional spaces
+               not!(is_a!(";\n"))          >> // Invalid chars before block
+               char!('{')                  >> // Mandatory opening {
+        block: parse_input                 >> // Recursive parsing. Oh no.
+               char!('}')                  >> // Mandatory terminating }
+        (JailConf::Block(                     // JailBlock to return
             JailBlock{
                 name:   name,
                 params: block,
@@ -453,5 +460,26 @@ mod tests {
         let ok = Ok((CompleteStr("\n"), jc));
 
         assert_eq!(res, ok);
+    }
+
+    #[test]
+    fn test_parse_block_with_invalid_semicolon_is_err() {
+        let input = indoc!(r#"invalid; {
+                persist;
+            }"#);
+
+        let res = parse_block(input.into());
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_parse_block_with_invalid_newline_is_err() {
+        let input = indoc!(r#"invalid
+            {
+                persist;
+            }"#);
+
+        let res = parse_block(input.into());
+        assert!(res.is_err());
     }
 }
