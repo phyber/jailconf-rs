@@ -146,6 +146,10 @@ named!(
             // Config could be in pretty much any order.
             // Surrounding whitespace will be trimmed.
             ws!(alt!(
+                // Parse C style comments
+                parse_comment_c_style => { |comment|
+                    JailConf::Comment(comment)
+                } |
                 // Parse a boolean parameter with no values.
                 parse_bool_param_no_value => { |param|
                     JailConf::ParamBool(JailParamBool{
@@ -406,6 +410,9 @@ mod tests {
     fn test_parse_input_full_conf() {
         let input = indoc!(
         r#"
+            /*
+             * Opening C style comment
+             */
             allow.mount;
             persist;
             allow.raw_sockets = "1";
@@ -418,6 +425,10 @@ mod tests {
 
         let res = parse_input(input.into());
         let jc = vec![
+            JailConf::Comment(JailComment{
+                comment: "\n * Opening C style comment\n ".into(),
+                style:   CommentStyle::C,
+            }),
             JailConf::ParamBool(JailParamBool{
                 name: CompleteStr("allow.mount"),
             }),
