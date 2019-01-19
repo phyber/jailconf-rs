@@ -19,7 +19,7 @@ enum CommentStyle {
 #[derive(Debug, PartialEq)]
 struct JailComment<'a> {
     comment: CompleteStr<'a>,
-    style: CommentStyle,
+    style:   CommentStyle,
 }
 
 #[derive(Debug, PartialEq)]
