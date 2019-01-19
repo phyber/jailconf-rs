@@ -1,51 +1,64 @@
-use std::env;
-use std::fs::File;
-use std::io;
+use std::error;
+use std::fmt;
 use nom::*;
-use nom::Context::{
-    Code,
-    List,
-};
-use nom::Err::*;
 use nom::types::CompleteStr;
 
 #[derive(Debug, PartialEq)]
-enum CommentStyle {
+pub enum CommentStyle {
     C,
     CPP,
     Shell,
 }
 
 #[derive(Debug, PartialEq)]
-struct JailComment<'a> {
+pub struct JailComment<'a> {
     comment: CompleteStr<'a>,
     style:   CommentStyle,
 }
 
 #[derive(Debug, PartialEq)]
-struct JailParamBool<'a> {
+pub struct JailParamBool<'a> {
     name: CompleteStr<'a>,
 }
 
 #[derive(Debug, PartialEq)]
-struct JailParamValue<'a> {
+pub struct JailParamValue<'a> {
     name:   CompleteStr<'a>,
     value:  CompleteStr<'a>,
     append: bool,
 }
 
 #[derive(Debug, PartialEq)]
-struct JailBlock<'a> {
+pub struct JailBlock<'a> {
     name:   CompleteStr<'a>,
     params: Vec<JailConf<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
-enum JailConf<'a> {
+pub enum JailConf<'a> {
     Block(JailBlock<'a>),
     Comment(JailComment<'a>),
     ParamBool(JailParamBool<'a>),
     ParamValue(JailParamValue<'a>),
+}
+
+#[derive(Debug)]
+pub struct ParseError;
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "could not parse jail configuration")
+    }
+}
+
+impl error::Error for ParseError {
+    fn description(&self) -> &str {
+        "could not parse jail configuration"
+    }
+
+    fn cause(&self) -> Option<&error::Error> {
+        None
+    }
 }
 
 // Parse a C style comment, eg:
@@ -209,46 +222,17 @@ named!(
     )
 );
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let mut input: Box<io::Read> = if args.len() > 1 {
-        let filename = &args[1];
-        let fh = File::open(filename).unwrap();
-        Box::new(fh)
-    }
-    else {
-        let stdin = io::stdin();
-        Box::new(stdin)
-    };
+// Public entry point into the parser.
+pub fn parse(input: &str) -> Result<Vec<JailConf>, ParseError> {
+    let res = parse_input(input.into());
 
-    let mut buffer = String::new();
-    input.read_to_string(&mut buffer).unwrap();
-
-    let result = parse_input(CompleteStr(&buffer));
-    let result = match result {
-        Ok(r)  => r,
-        Err(e) => {
-            match e {
-                Error(Code(i, k)) => {
-                    eprintln!("I: {}", i);
-                    eprintln!("K: {:?}", k);
-                },
-                Error(List(l)) => {
-                    eprintln!("{:?}", l);
-                },
-                Failure(f) => {
-                    eprintln!("{:?}", f);
-                }
-                Incomplete(_n) => {
-                    eprintln!("{:?}", e);
-                },
-            }
-            std::process::exit(1);
+    match res {
+        Ok(r) => {
+            let (_unparsed, parsed) = r;
+            Ok(parsed)
         },
-    };
-    let (a, b) = result;
-    println!("{:?}", a);
-    println!("{:?}", b);
+        Err(_e) => Err(ParseError),
+    }
 }
 
 #[cfg(test)]

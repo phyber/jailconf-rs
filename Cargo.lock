@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "jailconf-rs"
+name = "jailconf"
 version = "0.1.0"
 dependencies = [
  "indoc 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
