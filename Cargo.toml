@@ -7,9 +7,9 @@ edition = "2018"
 [dependencies]
 
 [dependencies.nom]
-version = "4.2.0"
-features = ["std", "verbose-errors"]
+version = "5.0.0"
 
 # Used by cargo test
 [dev-dependencies]
 indoc = "0.3"
+pretty_assertions = "0.6"

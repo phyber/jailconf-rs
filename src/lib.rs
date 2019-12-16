@@ -1,7 +1,7 @@
 use std::error;
 use std::fmt;
 use nom::*;
-use nom::types::CompleteStr;
+use nom::character::complete::*;
 
 #[derive(Debug, PartialEq)]
 pub enum CommentStyle {
@@ -12,25 +12,25 @@ pub enum CommentStyle {
 
 #[derive(Debug, PartialEq)]
 pub struct JailComment<'a> {
-    comment: CompleteStr<'a>,
+    comment: &'a str,
     style:   CommentStyle,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct JailParamBool<'a> {
-    name: CompleteStr<'a>,
+    name: &'a str,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct JailParamValue<'a> {
-    name:   CompleteStr<'a>,
-    value:  CompleteStr<'a>,
+    name:   &'a str,
+    value:  &'a str,
     append: bool,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct JailBlock<'a> {
-    name:   CompleteStr<'a>,
+    name:   &'a str,
     params: Vec<JailConf<'a>>,
 }
 
@@ -56,7 +56,7 @@ impl error::Error for ParseError {
         "could not parse jail configuration"
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&dyn error::Error> {
         None
     }
 }
@@ -66,13 +66,15 @@ impl error::Error for ParseError {
 //  * C style comment
 //  */
 named!(
-    parse_comment_c_style<CompleteStr, JailComment>,
+    parse_comment_c_style<&str, JailComment>,
     do_parse!(
+             multispace0 >>
         res: delimited!(
-            tag!("/*"),
-            take_until!("*/"),
-            tag!("*/")
-        ) >>
+                tag!("/*"),
+                take_until!("*/"),
+                tag!("*/")
+             )           >>
+             multispace0 >>
         (JailComment{
             comment: res,
             style:   CommentStyle::C,
@@ -83,10 +85,12 @@ named!(
 // Parse a CPP style comment, eg:
 // // C++ style comment
 named!(
-    parse_comment_cpp_style<CompleteStr, JailComment>,
+    parse_comment_cpp_style<&str, JailComment>,
     do_parse!(
+             multispace0       >>
              tag!("//")        >>
         res: take_until!("\n") >>
+             multispace0       >>
         (JailComment{
             comment: res,
             style:   CommentStyle::CPP,
@@ -97,10 +101,12 @@ named!(
 // Parse a shell style comment, eg:
 // # Shell style comment
 named!(
-    parse_comment_shell_style<CompleteStr, JailComment>,
+    parse_comment_shell_style<&str, JailComment>,
     do_parse!(
+             multispace0       >>
              tag!("#")         >>
         res: take_until!("\n") >>
+             multispace0       >>
         (JailComment{
             comment: res,
             style:   CommentStyle::Shell,
@@ -115,11 +121,13 @@ named!(
 //
 // Other types of value will error.
 named!(
-    parse_bool_param_no_value<CompleteStr, JailParamBool>,
+    parse_bool_param_no_value<&str, JailParamBool>,
     do_parse!(
-        name: take_until_either!(" +=;\n") >> // Consume until an interesting char
-              not!(is_a!(" +=\n"))         >> // Ensure it's not a banned char
-              char!(';')                   >> // Consume terminating ;
+              multispace0          >>
+        name: is_not!(" +=;\n")    >> // Consume until an interesting char
+              not!(is_a!(" +=\n")) >> // Ensure it's not a banned char
+              char!(';')           >> // Consume terminating ;
+              multispace0          >>
         (JailParamBool{
             name: name,
         })
@@ -136,21 +144,29 @@ named!(
 // This will choke if a value contained a quoted double quote, we should be
 // able to use escaped!() to help with this.
 named!(
-    parse_param_with_value<CompleteStr, JailParamValue>,
+    parse_param_with_value<&str, JailParamValue>,
     do_parse!(
-        name:  take_until_either!(" +=;\n") >>
-               not!(is_a!(";\n"))           >> // We don't want end of line yet
-               space0                       >> // Optional spaces
-        plus:  opt!(char!('+'))             >> // Optional +
-               char!('=')                   >> // = is mandatory
-               space0                       >> // Optional spaces
+               multispace0               >>
+        name:  is_not!(" +=;\n")         >>
+               not!(is_a!(";\n"))        >> // We don't want end of line yet
+               space0                    >> // Optional spaces
+        plus:  opt!(char!('+'))          >> // Optional +
+               char!('=')                >> // = is mandatory
+               space0                    >> // Optional spaces
         value: delimited!(
-                   opt_res!(tag!("\"")),        // Possible opening quote
-                   take_until_either!("\";\n"), // value
-                   opt_res!(tag!("\""))         // Possible closing quote
-               )                            >>
-               not!(is_a!("\n"))            >> // Ensure no new line yet
-               char!(';')                   >> // Terminating ;
+                   opt_res!(tag!("\"")),    // Possible opening quote
+                   //is_not!("\";\n"),        // value, might be empty string
+                   //take_until!("\";\n"),
+                   // We have to allow for empty quoted string
+                   take_till!(|ch| {
+                       let v = vec!['\"', ';', '\n'];
+                       v.contains(&ch)
+                   }),
+                   opt_res!(tag!("\""))     // Possible closing quote
+               )                         >>
+               not!(is_a!("\n"))         >> // Ensure no new line yet
+               char!(';')                >> // Terminating ;
+               multispace0               >>
         (JailParamValue{
             name:   name,
             value:  value,
@@ -167,15 +183,20 @@ named!(
 //     persist;
 // }
 named!(
-    parse_block<CompleteStr, JailConf>,
+    parse_block<&str, JailConf>,
     do_parse!(
-        name:  take_until_either!(" {;\n") >> // Read the name
-               space0                      >> // Optional spaces
-               not!(is_a!(";\n"))          >> // Invalid chars before block
-               char!('{')                  >> // Mandatory opening {
-        block: parse_input                 >> // Recursive parsing. Oh no.
-               char!('}')                  >> // Mandatory terminating }
-        (JailConf::Block(                     // JailBlock to return
+               multispace0        >>
+        name:  is_not!(" {;\n")   >> // Read the name
+               multispace0        >> // Optional spaces
+               not!(is_a!(";\n")) >> // Invalid chars before block
+               multispace0        >> // Optional spaces
+               char!('{')         >> // Mandatory opening {
+               multispace0        >> // Optional spaces
+        block: parse_input        >> // Recursive parsing. Oh no.
+               multispace0        >> // Optional spaces
+               char!('}')         >> // Mandatory terminating }
+               multispace0        >>
+        (JailConf::Block(            // JailBlock to return
             JailBlock{
                 name:   name,
                 params: block,
@@ -186,13 +207,13 @@ named!(
 
 // Attempt to parse the given jail.conf input
 named!(
-    parse_input<CompleteStr, Vec<JailConf>>,
+    parse_input<&str, Vec<JailConf>>,
     do_parse!(
         // We attempt parsers many times until the input is exhausted.
         config: many0!(
             // Config could be in pretty much any order.
             // Surrounding whitespace will be trimmed.
-            ws!(alt!(
+            alt!(
                 // Parse C style comments
                 parse_comment_c_style => { |comment|
                     JailConf::Comment(comment)
@@ -216,7 +237,7 @@ named!(
                 // Parse a named jail block
                 // Returns a JailConf::Block
                 parse_block
-            ))
+            )
         ) >>
         (config)
     )
@@ -260,7 +281,7 @@ mod tests {
         let jc = JailParamBool{
             name: "allow.mount".into(),
         };
-        let ok = Ok(("\n".into(), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -280,7 +301,7 @@ mod tests {
         let jc = JailParamBool{
             name: "allow.mount".into(),
         };
-        let ok = Ok(("\npersist;".into(), jc));
+        let ok = Ok(("persist;".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -331,7 +352,7 @@ mod tests {
             value: "true".into(),
             append: false,
         };
-        let ok = Ok((CompleteStr("\n"), jc));
+        let ok = Ok(("", jc));
 
         assert_eq!(res, ok);
     }
@@ -373,7 +394,7 @@ mod tests {
             value:  "true".into(),
             append: false,
         };
-        let ok = Ok(("\n".into(), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -449,7 +470,7 @@ mod tests {
             ],
         });
 
-        let ok = Ok((CompleteStr("\n"), jc));
+        let ok = Ok(("", jc));
         assert_eq!(res, ok);
     }
 
@@ -678,7 +699,7 @@ mod tests {
             ],
         });
 
-        let ok = Ok(("\n".into(), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -718,7 +739,7 @@ mod tests {
             style:   CommentStyle::C,
         };
 
-        let ok = Ok(("\n".into(), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -735,7 +756,7 @@ mod tests {
             style:   CommentStyle::CPP,
         };
 
-        let ok = Ok(("\n".into(), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
@@ -752,7 +773,7 @@ mod tests {
             style:   CommentStyle::Shell,
         };
 
-        let ok = Ok(("\n".into(), jc));
+        let ok = Ok(("".into(), jc));
 
         assert_eq!(res, ok);
     }
